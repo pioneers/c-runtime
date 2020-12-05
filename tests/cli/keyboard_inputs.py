@@ -1,17 +1,20 @@
 import threading    # for writing to socket
 from signal import signal, SIGINT   # for handle signal SIGINT
 from sys import exit
-from pynput import keyboard     # for representing keys as chars   
+from pynput import keyboard     # for representing keys as chars
 from pynput.keyboard import Listener, Key   # for keyboard listener
 from time import sleep
 import socket       # for TCP
 import struct       # for TCP encoding
+import ctypes
+
 
 ################################# GLOBAL VARS ##################################
 # TCP Setup
 HOST = '127.0.0.1'
 PORT = 5006
 ADDRESS = (HOST, PORT)
+
 map = {
     "BUTTON_A" : 0,
     "BUTTON_B" : 1,
@@ -40,27 +43,27 @@ map = {
     "JOYSTICK_RIGHT_Y_UP" : 24
 }
 controls = {
-        keyboard.KeyCode(char="k") : map["BUTTON_A"],
-        keyboard.KeyCode(char="l") : map["BUTTON_B"],
-        keyboard.KeyCode(char="j") : map["BUTTON_X"],
-        keyboard.KeyCode(char="i") : map["BUTTON_Y"],
-        keyboard.KeyCode(char="u") : map["L_BUMPER"],
-        keyboard.KeyCode(char="o") : map["R_BUMPER"],
-        keyboard.KeyCode(char="y") : map["L_TRIGGER"],
-        keyboard.KeyCode(char="p") : map["R_TRIGGER"],
-        keyboard.KeyCode(char="n") : map["BUTTON_BACK"],
-        keyboard.KeyCode(char="m") : map["BUTTON_START"],
-        keyboard.KeyCode(char="q") : map["L_STICK"],
-        keyboard.KeyCode(char="e") : map["R_STICK"],
-        keyboard.KeyCode(char="t") : map["DPAD_UP"],
-        keyboard.KeyCode(char="g") : map["DPAD_DOWN"],
-        keyboard.KeyCode(char="f") : map["DPAD_LEFT"],
-        keyboard.KeyCode(char="h") : map["DPAD_RIGHT"],
-        keyboard.KeyCode(char="z") : map["BUTTON_XBOX"],
-        keyboard.KeyCode(char="d") : map["JOYSTICK_LEFT_X_RIGHT"],
-        keyboard.KeyCode(char="a") : map["JOYSTICK_LEFT_X_LEFT"],
-        keyboard.KeyCode(char="s") : map["JOYSTICK_LEFT_Y_DOWN"],
-        keyboard.KeyCode(char="w") : map["JOYSTICK_LEFT_Y_UP"],
+        keyboard.KeyCode(char=k) : map["BUTTON_A"],
+        keyboard.KeyCode(char=l) : map["BUTTON_B"],
+        keyboard.KeyCode(char=j) : map["BUTTON_X"],
+        keyboard.KeyCode(char=i) : map["BUTTON_Y"],
+        keyboard.KeyCode(char=u) : map["L_BUMPER"],
+        keyboard.KeyCode(char=o) : map["R_BUMPER"],
+        keyboard.KeyCode(char=y) : map["L_TRIGGER"],
+        keyboard.KeyCode(char=p) : map["R_TRIGGER"],
+        keyboard.KeyCode(char=n) : map["BUTTON_BACK"],
+        keyboard.KeyCode(char=m) : map["BUTTON_START"],
+        keyboard.KeyCode(char=q) : map["L_STICK"],
+        keyboard.KeyCode(char=e) : map["R_STICK"],
+        keyboard.KeyCode(char=t) : map["DPAD_UP"],
+        keyboard.KeyCode(char=g) : map["DPAD_DOWN"],
+        keyboard.KeyCode(char=f) : map["DPAD_LEFT"],
+        keyboard.KeyCode(char=h) : map["DPAD_RIGHT"],
+        keyboard.KeyCode(char=z) : map["BUTTON_XBOX"],
+        keyboard.KeyCode(char=d) : map["JOYSTICK_LEFT_X_RIGHT"],
+        keyboard.KeyCode(char=a) : map["JOYSTICK_LEFT_X_LEFT"],
+        keyboard.KeyCode(char=s) : map["JOYSTICK_LEFT_Y_DOWN"],
+        keyboard.KeyCode(char=w) : map["JOYSTICK_LEFT_Y_UP"],
         keyboard.Key.left : map["JOYSTICK_RIGHT_X_LEFT"],
         keyboard.Key.right : map["JOYSTICK_RIGHT_X_RIGHT"],
         keyboard.Key.down : map["JOYSTICK_RIGHT_Y_DOWN"],
@@ -130,16 +133,16 @@ def handler(signal_received, frame):
 #################################### Listening & Writing ####################################
 
 def activate_gamepad_bit(on):
-    gamepad_bits[on] = "1"
+    gamepad_bits | (1 << on)
 
 def deactivate_gamepad_bit(off):
-    gamepad_bits[off] = "0" 
+    gamepad_bits & ~(1 << off)
 
 def activate_keyboard_bit(on):
-    keyboard_bits[on] = "1"
+    keyboard_bits | (1 << on)
 
 def deactivate_keyboard_bit(off):
-    keyboard_bits[off] = "0"
+    keyboard_bits & ~(1 << off)
 
 def on_press(key):
     mutex.acquire()
@@ -174,14 +177,8 @@ def write_to_socket():
     sock = connect_tcp()
     while(True):
         mutex.acquire()
-        gamepad_to_send = ''.join(gamepad_bits)
-        if (gamepad_bits != list("0" * len(controls))):
-            print("sending gamepad", gamepad_to_send.encode())
-        sock.send(gamepad_to_send.encode()) # send the 'bitstring' over tcp using socket object
-        keyboard_to_send = ''.join(keyboard_bits)
-        if (keyboard_bits != list("0" * len(keyboardKeys))):
-            print("sending keyboard", keyboard_to_send.encode())
-        sock.send(keyboard_to_send.encode())
+        sock.send(gamepad_bits) # send the 'bitstring' over tcp using socket object
+        sock.send(keyboard_bits)
         mutex.release()
         sleep(0.05) # allows for the listener to modify the bitstring
 
@@ -191,8 +188,8 @@ def main():
     signal(SIGINT, handler) 
     global gamepad_bits
     global keyboard_bits
-    gamepad_bits = list("0" * len(controls)) # 'bitstring' to be modified and sent 
-    keyboard_bits = list("0" * len(keyboardKeys))
+    gamepad_bits = c_ulonglong(0) # 'bitstring' to be modified and sent 
+    keyboard_bits = c_ulonglong(0)
     global mutex
     mutex = threading.Lock() # used to avoid race conditions when reading and sending data
     keyboard_control()
