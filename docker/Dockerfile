@@ -2,6 +2,12 @@ FROM pierobotics/runtime:base
 
 WORKDIR /root/runtime
 
+RUN apt-get update && apt-get install -y openssh-server
+RUN service ssh start
+
+RUN useradd -m -s /bin/bash -p $(openssl passwd runtime) runtime
+RUN usermod -aG sudo runtime
+
 # Adds all files in the repo that are not in .dockerignore
 ADD ./ ./
 
