@@ -74,7 +74,7 @@ void Device::loop() {
     if (!(this->enabled)) {
         return;
     }
-
+	
     // do device-specific actions. This may change params
     device_actions();
 

@@ -31,6 +31,9 @@ Messenger::Messenger() {
 }
 
 Status Messenger::send_message(MessageID msg_id, message_t* msg, dev_id_t* dev_id) {
+
+	delay(10);
+	
     // Fill MessageID field
     msg->message_id = msg_id;
 
@@ -77,6 +80,8 @@ Status Messenger::read_message(message_t* msg) {
     if (!Serial.available()) {
         return Status::NO_DATA;
     }
+	
+	delay(10);
 
     // Find the start of the packet (the delimiter)
     int last_byte_read = -1;
@@ -164,14 +169,14 @@ void Messenger::lowcar_flush() {
         return;
     }
 
-    message_t log;
+    message_t log_msg;
     // For each log, send a new message
     for (int i = 0; i < this->num_logs; i++) {
-        log.payload_length = strlen(this->log_queue[i]) + 1;  // Null terminator character
+        log_msg.payload_length = strlen(this->log_queue[i]) + 1;  // Null terminator character
 
         // Copy string into payload
-        memcpy((char*) log.payload, this->log_queue[i], (size_t) log.payload_length);
-        this->send_message(MessageID::LOG, &log);
+        memcpy((char*) log_msg.payload, this->log_queue[i], (size_t) log_msg.payload_length);
+        this->send_message(MessageID::LOG, &log_msg);
     }
     // "Clear" the queue
     this->num_logs = 0;

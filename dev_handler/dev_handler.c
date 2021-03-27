@@ -276,6 +276,7 @@ void* relayer(void* relay_cast) {
     int ret;
 
     // Verify that the device is a lowcar device
+    sleep(2); // ** EXPERIMENTAL FOR ARDUINO UNO ONLY ** //
     ret = verify_device(relay);
     if (ret != 0) {
         log_printf(DEBUG, "/dev/ttyACM%d couldn't be verified to be a lowcar device", relay->port_num);
