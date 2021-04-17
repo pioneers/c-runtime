@@ -88,6 +88,7 @@ void setup_keyboard() {
     // Receive a bitstring of buttons and parse it
     while (1) {
         // Reset buttons/joysticks
+<<<<<<< HEAD
         gamepad_buttons = 0;
         memset(gamepad_buff, 0, NUM_GAMEPAD_BUTTONS_AND_JOYSTICKS * sizeof(char));
         memset(joystick_vals, 0, NUM_GAMEPAD_JOYSTICKS * sizeof(float));
@@ -106,6 +107,18 @@ void setup_keyboard() {
             if (gamepad_buff[i] == '1') {
                 pushed = .25;
             }
+=======
+        buttons = 0;
+
+        // Read in bit string of size 32, not sizeof(buf)(33) since we are being sent a 32 len string
+
+        uint64_t bitmap = 0;
+        bitmap = recv(fd,bitmap,sizeof(bitmap) , 0);
+        // Parse joystick values
+        for (int i = joystick_left_x_right; i <= joystick_right_y_up; i++) {
+            float pushed = (bitmap % 10)/4;
+            bitmap = bitmap/10;
+>>>>>>> f6a3474 (sorry)
             if (pushed != 0) {
                 switch (i) {
                     case joystick_left_x_right:
@@ -136,6 +149,7 @@ void setup_keyboard() {
             }
         }
 
+<<<<<<< HEAD
         // Set bitmap for gamepad
         for (int i = 0; i < NUM_GAMEPAD_BUTTONS; i++) {
             if (gamepad_buff[i] == '1') {
@@ -147,6 +161,12 @@ void setup_keyboard() {
         for (int i = 0; i < NUM_KEYBOARD_BUTTONS; i++) {
             if (keyboard_buff[i] == '1') {
                 keyboard_buttons |= (((uint64_t) 1) << i);
+=======
+        // Parse the buttons TODO: EXTEND TO BUTTON_XBOX
+        for (int i = button_a; i <= button_xbox; i++) {
+            if (bitmap mod (10 ** (i+1)) >= 10 ** i) {
+                buttons |= (1 << i);
+>>>>>>> f6a3474 (sorry)
             }
         }
 

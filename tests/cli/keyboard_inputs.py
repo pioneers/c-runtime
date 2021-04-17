@@ -8,7 +8,6 @@ import socket       # for TCP
 import struct       # for TCP encoding
 import ctypes
 
-
 ################################# GLOBAL VARS ##################################
 # TCP Setup
 HOST = '127.0.0.1'
