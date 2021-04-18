@@ -119,6 +119,24 @@ int main() {
     if (close(fd_shm) == -1) {
         log_printf(ERROR, "close log_data_shm: %s", strerror(errno));
     }
+    
+    // create runtime status update FIFOs
+    mode_t fifo_mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;  // -rw-rw-rw permission for FIFOs
+    if (mkfifo(DAWN_UPDATE_FIFO, fifo_mode) == -1) {
+        if (errno != EEXIST) {  // don't show error if mkfifo failed because it already exists
+            log_printf(ERROR, "mkfifo: failed to create dawn update fifo: %s", strerror(errno));
+        }
+    }
+    if (mkfifo(SHEP_UPDATE_FIFO, fifo_mode) == -1) {
+        if (errno != EEXIST) {  // don't show error if mkfifo failed because it already exists
+            log_printf(ERROR, "mkfifo: failed to create shepherd update fifo: %s", strerror(errno));
+        }
+    }
+    if (mkfifo(EXEC_UPDATE_FIFO, fifo_mode) == -1) {
+        if (errno != EEXIST) {  // don't show error if mkfifo failed because it already exists
+            log_printf(ERROR, "mkfifo: failed to create executor update fifo: %s", strerror(errno));
+        }
+    }
 
     // initialize everything
     dev_shm_ptr->catalog = 0;

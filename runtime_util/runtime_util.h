@@ -41,8 +41,15 @@
 #define CHALLENGE_LEN 128  // The maximum input/output string length for a challenge
 #define CHALLENGE_SOCKET "/tmp/challenge.sock"
 
+#define DAWN_UPDATE_FIFO "/tmp/dawn_update_fifo" // FIFO that indicates that a runtime status update should be sent to Dawn
+#define SHEP_UPDATE_FIFO "/tmp/shep_update_fifo" // FIFO that indicates that a runtime status update should be sent to Shepherd
+#define EXEC_UPDATE_FIFO "/tmp/exec_update_fifo" // FIFO that indicates to executor that it should act on run mode change
+
 // The interval (microseconds) at which we wait between detecting connects/disconnects
 #define POLL_INTERVAL 200000
+
+// The Runtime version string
+#define RUNTIME_VERSION_STR "2.1.0"
 
 // enumerated names of processes
 typedef enum process {
@@ -83,7 +90,7 @@ typedef enum robot_desc_vals {
     AUTO,
     TELEOP,
     CHALLENGE,
-    // values for robot.dawn, robot.shepherd, robot.gamepad
+    // values for robot.dawn, robot.shepherd, robot.gamepad, robot.keyboard
     CONNECTED,
     DISCONNECTED,
     // values for robot.startpos

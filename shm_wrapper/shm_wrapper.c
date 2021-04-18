@@ -16,6 +16,10 @@ sem_t* rd_sem;                 // semaphore used as a mutex on the robot descrip
 log_data_shm_t* log_data_shm_ptr;  // points to shared memory block for log data specified by executor
 sem_t* log_data_sem;               // semaphore used as a mutex on the log data
 
+int dawn_update_fd;     // file descriptor for status update FIFO to Dawn
+int shep_update_fd;     // file descriptor to status update FIFO to Shepherd
+int exec_update_fd;     // file descriptor to status update FIFO to executor
+
 // ****************************************** SEMAPHORE UTILITIES ***************************************** //
 
 /**
@@ -306,6 +310,20 @@ void shm_init() {
     if (close(fd_shm) == -1) {
         log_printf(ERROR, "close log_data_shm: %s", strerror(errno));
     }
+    
+    // open runtime status FIFOs
+    if ((dawn_update_fd = open(DAWN_UPDATE_FIFO, O_RDWR)) == -1) {
+        log_printf(ERROR, "open: could not open dawn update fd: %s", strerror(errno));
+        exit(1);
+    }
+    if ((shep_update_fd = open(SHEP_UPDATE_FIFO, O_RDWR)) == -1) {
+        log_printf(ERROR, "open: could not open shepherd update fd: %s", strerror(errno));
+        exit(1);
+    }
+    if ((exec_update_fd = open(EXEC_UPDATE_FIFO, O_RDWR)) == -1) {
+        log_printf(ERROR, "open: could not open executor update fd: %s", strerror(errno));
+        exit(1);
+    }
 
     atexit(shm_close);
 }
@@ -568,6 +586,24 @@ void robot_desc_write(robot_desc_field_t field, robot_desc_val_t val) {
 
     // write the val into the field, and set appropriate pending element to 1
     rd_shm_ptr->fields[field] = val;
+    
+    // write to runtime status FIFOs
+    uint8_t val = 255;
+    if (rd_shm_ptr->fields[DAWN] == CONNECTED) {
+        if (writen(dawn_update_fd, &val, 1) == -1) {
+            log_printf(ERROR, "robot_desc_write: could not write to dawn_update_fifo");
+        }
+    }
+    if (rd_shm_ptr->fields[SHEPHERD] == CONNECTED) {
+        if (writen(shep_update_fd, &val, 1) == -1) {
+            log_printf(ERROR, "robot_desc_write: could not write to shep_update_fifo");
+        }
+    }
+    if (field == RUN_MODE) {
+        if (writen(exec_update_fd, &val, 1) == -1) {
+            log_printf(ERROR, "robot_desc_write: could not write to exec_update_fifo");
+        }
+    }
 
     // release rd_sem
     my_sem_post(rd_sem, "robot_desc_mutex");

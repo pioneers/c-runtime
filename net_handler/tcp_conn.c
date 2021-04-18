@@ -4,8 +4,9 @@
 typedef struct {
     int conn_fd;
     int challenge_fd;
-    int send_logs;
+    uint8_t send_logs;
     FILE* log_file;
+    int status_fd;
     robot_desc_field_t client;
 } tcp_conn_args_t;
 
@@ -33,15 +34,19 @@ static void tcp_conn_cleanup(void* args) {
         }
         tcp_args->log_file = NULL;
     }
+    if (close(tcp_ars->status_fd) != 0) {
+        log_printf(ERROR, "Failed to close status_fd: %s", strerror(errno));
+    }
+    
     robot_desc_write(tcp_args->client, DISCONNECTED);
     if (tcp_args->client == DAWN) {
         robot_desc_write(GAMEPAD, DISCONNECTED);   // Disconnect gamepad if Dawn is no longer connected
         robot_desc_write(KEYBOARD, DISCONNECTED);  // Disconnect keyboard if Dawn is no longer connected
     }
+    
     free(args);
     log_printf(DEBUG, "Finished cleaning up TCP connection with %d\n", tcp_args->client);
 }
-
 
 /*
  * Send a log message on the TCP connection to the client. Reads lines from the pipe until there is no more data
@@ -123,6 +128,60 @@ static void send_timestamp_msg(int conn_fd, TimeStamps* dawn_timestamp_msg) {
     if (writen(conn_fd, send_buf, len_pb + BUFFER_OFFSET) == -1) {
         log_printf(ERROR, "send_timestamp_msg: sending log message over socket failed: %s", strerror(errno));
     }
+    free(send_buf);
+}
+
+/*
+ * Send a runtime status message over TCP to the client
+ * Arguments:
+ *    - int conn_fd: socket connection's file descriptor on which to write to the TCP port
+ *    - int status_fd; file descriptor of the status update FIFO
+ */
+static void send_runtime_status_msg(int conn_fd, int status_fd) {
+    RuntimeStatus status_msg = RUNTIME_STATUS__INIT; // initialize a new Runtime Status message'
+    char version_str[] = RUNTIME_VERSION_STR;
+
+    // pull a byte out of the status FIFO
+    uint8_t val;
+    if (readn(status_fd, &val, 1) == -1) {
+        log_printf(ERROR, "send_runtime_status_msg: unable to read byte out of status FIFO");
+    }
+
+    // fill out the fields
+    status_msg.shep_connected = robot_desc_read(SHEPHERD) == CONNECTED ? 1 : 0;
+    status_msg.dawn_connected = robot_desc_read(DAWN) == CONNECTED ? 1 : 0;
+    
+    switch (robot_desc_read(RUN_MODE)) {
+        case (IDLE):
+            status_msg.mode = MODE__IDLE;
+            break;
+        case (AUTO):
+            status_msg.mode = MODE__AUTO;
+            break;
+        case (TELEOP):
+            status_msg.mode = MODE__TELEOP;
+            break;
+        default:
+            log_printf(ERROR, "send_runtime_status_msg: unknown run mode");
+            break;
+    }
+
+    status_msg.battery = 0.0; // TODO: figure out a way to get the battery voltage
+    status_msg.version = malloc(32); // Runtime version string should not be longer than 32 characters
+    memcpy(status_msg.version, version_str, strlen(version_str) + 1);
+
+    //prepare the message for sending
+    uint16_t len_pb = runtime_status__get_packed_size(&status_msg);
+    uint8_t* send_buf = make_buf(RUNTIME_STATUS_MSG, len_pb);
+    runtime_status__pack(&status_msg, send_buf + BUFFER_OFFSET);  //pack message into the rest of send_buf (starting at send_buf[3] onward)
+
+    //send message on socket
+    if (writen(conn_fd, send_buf, len_pb + BUFFER_OFFSET) == -1) {
+        log_printf(ERROR, "send_runtime_status_msg: sending runtime status message over socket failed: %s", strerror(errno));
+    }
+
+    // free all allocated memory
+    free(status_msg.version);
     free(send_buf);
 }
 
@@ -315,7 +374,6 @@ static int recv_new_msg(int conn_fd, int challenge_fd) {
     return 0;
 }
 
-
 /*
  * Main control loop for a TCP connection. Sets up connection by opening up pipe to read log messages from
  * and sets up read_set for select(). Then it runs main control loop, using select() to make actions event-driven.
@@ -325,42 +383,55 @@ static int recv_new_msg(int conn_fd, int challenge_fd) {
  *    - NULL
  */
 static void* tcp_process(void* tcp_args) {
+    const double max_update_interval = 60.0; // maximum time allowed between runtime status updates, in seconds
+
     tcp_conn_args_t* args = (tcp_conn_args_t*) tcp_args;
     pthread_cleanup_push(tcp_conn_cleanup, args);
     int ret;
 
     //variables used for waiting for something to do using select()
+    struct timeval timeout;
     fd_set read_set;
     int log_fd;
     int maxfd = args->challenge_fd > args->conn_fd ? args->challenge_fd : args->conn_fd;
+    maxfd = args->status_fd > maxfd ? args->status_fd : maxfd;
     if (args->send_logs) {
         log_fd = fileno(args->log_file);
         maxfd = log_fd > maxfd ? log_fd : maxfd;
     }
     maxfd = maxfd + 1;
+    
+    // send a status update message and record time
+    send_runtime_status_msg(args->conn_fd, args->status_fd);
+    time_t prev_update_time = time(NULL);
 
     //main control loop that is responsible for sending and receiving data
     while (1) {
-        //set up the read_set argument to selct()
+        //set up the read_set argument to select()
         FD_ZERO(&read_set);
         FD_SET(args->conn_fd, &read_set);
         FD_SET(args->challenge_fd, &read_set);
+        FD_SET(args->status_fd, &read_set);
         if (args->send_logs) {
             FD_SET(log_fd, &read_set);
         }
+        
+        // set up the timeout argument to select()
+        timeout.tv_sec = (int) max_update_interval / 2;
+        timeout.tv_usec = 0;
 
-        //prepare to accept cancellation requests over the select
+        //prepare to accept cancellation requests over call to select()
         pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 
         //wait for something to happen
-        if (select(maxfd, &read_set, NULL, NULL, NULL) < 0) {
+        if ((ret = select(maxfd, &read_set, NULL, NULL, &timeout)) < 0) {
             log_printf(ERROR, "tcp_process: Failed to wait for select in control loop for client %d: %s", args->client, strerror(errno));
         }
 
         //deny all cancellation requests until the next loop
         pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
 
-        // If client wants logs, logs are availble to send, and FIFO doesn't have an EOF, send logs
+        //if client wants logs, logs are availble to send, and FIFO doesn't have an EOF, send logs
         if (args->send_logs && FD_ISSET(log_fd, &read_set)) {
             send_log_msg(args->conn_fd, args->log_file);
         }
@@ -368,6 +439,13 @@ static void* tcp_process(void* tcp_args) {
         //send challenge results if executor sent them
         if (FD_ISSET(args->challenge_fd, &read_set)) {
             send_challenge_results(args->conn_fd, args->challenge_fd);
+        }
+        
+        //send runtime status update if select() timed out, it's been too long since previous status update,
+        //or if status FIFO has indicated that we need to send an update
+        if (ret == 0 || difftime(time(NULL), prev_update_time) > max_update_interval || FD_ISSET(args->status_fd, &read_set)) {
+            send_runtime_status_msg(args->conn_fd, args->status_fd);
+            prev_update_time = time(NULL);
         }
 
         //receive new message on socket if it is ready
@@ -388,9 +466,7 @@ static void* tcp_process(void* tcp_args) {
     return NULL;
 }
 
-
 /************************ PUBLIC FUNCTIONS *************************/
-
 
 void start_tcp_conn(robot_desc_field_t client, int conn_fd, int send_logs) {
     pthread_t* tid;
@@ -442,6 +518,12 @@ void start_tcp_conn(robot_desc_field_t client, int conn_fd, int send_logs) {
             close(log_fd);
             return;
         }
+    }
+    
+    // Open FIFO pipe for receiving status updates
+    if ((args->status_fd = open((client == DAWN) ? DAWN_UPDATE_FIFO : SHEP_UPDATE_FIFO, O_RDONLY | O_NONBLOCK)) == -1) {
+        log_printf(ERROR, "start_tcp_conn: could not open status update fifo on %d: %s", args->client, strerrror(errno));
+        return;
     }
 
     //create the main control thread for this client

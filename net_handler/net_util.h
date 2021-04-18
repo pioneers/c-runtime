@@ -24,6 +24,7 @@
 #include "pbc_gen/start_pos.pb-c.h"
 #include "pbc_gen/text.pb-c.h"
 #include "pbc_gen/timestamp.pb-c.h"
+#include "pbc_gen/runtime_status.pb-c.h"
 
 #define RASPI_ADDR "127.0.0.1"  // The IP address of Runtime (Raspberry Pi) that clients can request a connection to
 #define RASPI_TCP_PORT 8101     // Port for Runtime as a TCP socket server
@@ -45,7 +46,8 @@ typedef enum net_msg {
     DEVICE_DATA_MSG,
     GAME_STATE_MSG,
     INPUTS_MSG,  // used for converter testing; remove after 2021 Spring Comp...maybe
-    TIME_STAMP_MSG
+    TIME_STAMP_MSG,
+    RUNTIME_STATUS_MSG
 } net_msg_t;
 
 // ******************************************* USEFUL UTIL FUNCTIONS ******************************* //
@@ -65,10 +67,10 @@ uint8_t* make_buf(net_msg_t msg_type, uint16_t len_pb);
 /*
  * Parses a message from the given file descriptor into its separate components and stores them in provided pointers
  * Arguments:
- *    - int *fd: pointer to file descriptor from which to read the incoming message
- *    - net_msg_t *msg_type: message type of the incoming message will be stored in this location upon successful return
- *    - uint16_t *len_pb: serialized length, in bytes, of the incoming message will be stored in this location upon successful return
- *    - uint8_t *buf: serialized message will be stored starting at this location upon successful return
+ *    - int fd: file descriptor from which to read the incoming message
+ *    - net_msg_t *msg_type: message type of the incoming message will be stored at this address upon successful return
+ *    - uint16_t *len_pb: serialized length, in bytes, of the incoming message will be stored at this address upon successful return
+ *    - uint8_t **buf: serialized message will be stored starting at this address upon successful return
  * Return:
  *    - 0: successful return
  *    - -1: Error/EOF encountered when reading from fd

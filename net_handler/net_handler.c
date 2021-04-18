@@ -47,7 +47,6 @@ static int socket_setup(int* sockfd) {
     return 0;
 }
 
-
 /*
 * Handles SIGINT being sent to the process by closing connections and closing shm_aux, shm, and logger.
 * Arguments:

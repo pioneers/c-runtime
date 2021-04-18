@@ -23,6 +23,7 @@ PyObject *pModule, *pAPI, *pRobot, *pGamepad, *pKeyboard;
 robot_desc_val_t mode = IDLE;  // current robot mode
 pid_t pid;                     // pid for mode process
 int challenge_fd;              // challenge socket
+int status_fd:                 // status update FIFO
 
 // Timings for all modes
 struct timespec setup_time = {2, 0};  // Max time allowed for setup functions
@@ -577,12 +578,25 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     log_printf(INFO, "Executor initialized");
+    
+    // open the status update FIFO
+    if ((status_fd = open(EXEC_UPDATE_FIFO, O_RDONLY)) == -1) {
+        log_printf(FATAL, "could not open status update FIFO: %s", strerror(errno));
+        return 1;
+    }
+    uint8_t val;
 
     robot_desc_val_t new_mode = IDLE;
     // Main loop that checks for new run mode in shared memory from the network handler
     while (1) {
+        // blocks until a byte appears on status_fd, indicating run mode change
+        if (readn(status_fd, &val, 1) == -1) {
+            log_printf(ERROR, "error reading from status update FIFO: %s", strerror(errno));
+            continue;
+        }
+        
+        // change run mode if it's changed from previous mode
         new_mode = robot_desc_read(RUN_MODE);
-        // If we receive a new mode, cancel the previous mode and start the new one
         if (new_mode != mode) {
             if (mode != IDLE) {
                 kill_subprocess();
@@ -595,6 +609,5 @@ int main(int argc, char* argv[]) {
                 }
             }
         }
-        usleep(100000);  //throttle this thread to ~10 Hz
     }
 }
